@@ -66,9 +66,16 @@ bool gotFirstFix_;
 bool record_transform;
 double maxGPS_dist_Error_;
 int maxQSize_;
+std::ofstream ofs;
+ 
+std::string file_name;
+int sample_count;
+bool tf_available;
+double latOrigin, lonOrigin, altOrigin;
+std::vector<std::vector<std::string>> tf_data;
 
-static Eigen::Matrix4f l_to_g, g_to_l;
-static Eigen::Matrix4f l_to_g_sensor, g_to_l_sensor;
+Eigen::Matrix4f l_to_g, g_to_l;
+Eigen::Matrix4f l_to_g_sensor, g_to_l_sensor;
 
 public:
 Localtoworld();
@@ -77,7 +84,8 @@ void GpsCallback(sensor_msgs::NavSatFixConstPtr fix);
 void LocalCallback(geometry_msgs::PoseStampedConstPtr local_pose);
 
 void compute_transform();
-void load_tf_file(std::string filename);
+
+
 
 };
 
