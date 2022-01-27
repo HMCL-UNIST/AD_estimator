@@ -26,15 +26,13 @@
 /**********************************************
  * @file StateEstimator.cpp
  * @author Paul Drews <pdrews3@gatech.edu>
- * @date May 1, 2017
+ * @author Edited by Hojin Lee <hojinlee@unist.ac.kr> 
+ * @date May 1, 2017 / modified 2022
  * @copyright 2017 Georgia Institute of Technology
- * @brief ROS node to fuse information sources and create an accurate state estimation
- *
- * @details Subscribes to the GPS, IMU, and wheel odometry topics, claculates
+ * @brief ROS node to fuse information sources and create an accurate state estimation *
+ * @details Subscribes to other pose estimate solution, GPS, IMU, and wheel odometry topics, claculates
  * an estimate of the car's current state using GTSAM, and publishes that data.
  ***********************************************/
-
-
 
 #include <iostream>
 #include <string>
@@ -60,6 +58,7 @@
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/nonlinear/GaussNewtonOptimizer.h>
 
+
 using namespace gtsam;
 // Convenience for named keys
 using symbol_shorthand::X;
@@ -71,7 +70,7 @@ using symbol_shorthand::G; // GPS pose
 // macro for getting the time stamp of a ros message
 #define TIME(msg) ( (msg)->header.stamp.toSec() )
 
-namespace autorally_core
+namespace localization_core
 {
 
   StateEstimator::StateEstimator() :
@@ -108,7 +107,7 @@ namespace autorally_core
     nh_.param<double>("CarXAngle",  carXAngle, 0);
     nh_.param<double>("CarYAngle",  carYAngle, 0);
     nh_.param<double>("CarZAngle",  carZAngle, 0);
-    nh_.param<double>("Gravity",   gravityMagnitude, 9.8);
+    nh_.param<double>("Gravity",   gravityMagnitude, 9.81);
     nh_.param<bool>("InvertX", invertx_, false);
     nh_.param<bool>("InvertY", inverty_, false);
     nh_.param<bool>("InvertZ", invertz_, false);
@@ -175,21 +174,23 @@ namespace autorally_core
 
     optimizedTime_ = 0;
 
-    imu_3dm_gx4::FilterOutputConstPtr ip;
+    // imu_3dm_gx4::FilterOutputConstPtr ip;
+    
     if (!fixedInitialPose)
     {
       while (!ip)
       {
         ROS_WARN("Waiting for valid initial orientation");
-        ip = ros::topic::waitForMessage<imu_3dm_gx4::FilterOutput>("filter", nh_, ros::Duration(15));
+        // ip = ros::topic::waitForMessage<imu_3dm_gx4::FilterOutput>("filter", nh_, ros::Duration(15));
+        ip = ros::topic::waitForMessage<geometry_msgs::PoseStamped>("/current_pose", nh_, ros::Duration(15));
       }
-      initialPose_.orientation.w = ip->orientation.w;
-      initialPose_.orientation.x = ip->orientation.x;
-      initialPose_.orientation.y = ip->orientation.y;
-      initialPose_.orientation.z = ip->orientation.z;
-      initialPose_.bias.x = ip->bias.x;
-      initialPose_.bias.y = ip->bias.y;
-      initialPose_.bias.z = ip->bias.z;
+      initialPose_.orientation.w = ip->pose.orientation.w;
+      initialPose_.orientation.x = ip->pose.orientation.x;
+      initialPose_.orientation.y = ip->pose.orientation.y;
+      initialPose_.orientation.z = ip->pose.orientation.z;
+      initialPose_.bias.x = 0.0;
+      initialPose_.bias.y = 0.0;
+      initialPose_.bias.z = 0.0;
     }
     else
     {
@@ -215,6 +216,7 @@ namespace autorally_core
     carENUPcarNED_.print("CarBodyPose\n");
 
     posePub_ = nh_.advertise<nav_msgs::Odometry>("pose", 1);
+    estPosePub = nh_.advertise<geometry_msgs::PoseStamped>("estimated_pose", 1);
     biasAccPub_ = nh_.advertise<geometry_msgs::Point>("bias_acc", 1);
     biasGyroPub_ = nh_.advertise<geometry_msgs::Point>("bias_gyro", 1);
     timePub_ = nh_.advertise<geometry_msgs::Point>("time_delays", 1);
@@ -254,7 +256,7 @@ namespace autorally_core
      imuSub_ = nh_.subscribe("imu", 600, &StateEstimator::ImuCallback, this);
      odomSub_ = nh_.subscribe("wheel_odom", 300, &StateEstimator::WheelOdomCallback, this);
 
-     boost::thread optimizer(&StateEstimator::GpsHelper,this);
+     boost::thread optimizer(&StateEstimator::GpsHelper,this); // main loop
   }
 
   StateEstimator::~StateEstimator()
@@ -291,7 +293,7 @@ namespace autorally_core
 
   void StateEstimator::GpsHelper()
   {
-    ros::Rate loop_rate(10);
+    ros::Rate loop_rate(10); // rate of GPS 
     bool gotFirstFix = false;
     double startTime;
     int odomKey = 1;
@@ -335,6 +337,9 @@ namespace autorally_core
         {
           enu_.Reset(fix->latitude, fix->longitude, fix->altitude);
           E = 0; N = 0; U = 0; // we're choosing this as the origin
+          E = ip->pose.position.x;
+          N = ip->pose.position.y;
+          U = ip->pose.position.z;
         }
         else
         {
@@ -440,13 +445,22 @@ namespace autorally_core
             
             // check if the GPS message is close to our expected position
             Pose3 expectedState;
-            ROS_WARN("x = %f,y = %f,z = %f,",expectedState.x(),expectedState.y(),expectedState.z());
+            
             if (newVariables.exists(X(key)))
               expectedState = (Pose3) newVariables.at<Pose3>(X(key));
             else
               expectedState = isam_->calculateEstimate<Pose3>(X(key));
 
+            ROS_WARN("x = %f,y = %f,z = %f,",expectedState.x(),expectedState.y(),expectedState.z());
+            ROS_WARN("E = %f,N = %f",E,N);
             double dist = std::sqrt( std::pow(expectedState.x() - E, 2) + std::pow(expectedState.y() - N, 2) );
+            
+            ROS_WARN("dist = %f", dist);
+            if (dist > maxGPSError_ )
+            {ROS_WARN("dist > maxGPSError");}
+            if (latestGPSKey > imuKey-2)
+            {ROS_WARN("latestGPSKey > imuKey-2");}
+
             if (dist < maxGPSError_ || latestGPSKey < imuKey-2)
             {
               geometry_msgs::PoseWithCovarianceStamped point;
@@ -561,7 +575,7 @@ namespace autorally_core
   void StateEstimator::ImuCallback(sensor_msgs::ImuConstPtr imu)
   {
     double dt;
-    if (lastImuT_ == 0) dt = 0.005;
+    if (lastImuT_ == 0) dt = 0.005; // 200 Hz 
     else dt = TIME(imu) - lastImuT_;
 
     lastImuT_ = TIME(imu);
@@ -653,6 +667,13 @@ namespace autorally_core
     poseNew.header.frame_id = "odom";
 
     posePub_.publish(poseNew);
+    
+    geometry_msgs::PoseStamped est_pose_new;
+    est_pose_new.header = poseNew.header;
+    est_pose_new.pose.position = poseNew.pose.pose.position;
+    est_pose_new.pose.orientation = poseNew.pose.pose.orientation;
+    est_pose_new.header.frame_id = "map";
+    estPosePub.publish(est_pose_new);
 
     geometry_msgs::Point delays;
     delays.x = TIME(imu);
@@ -724,6 +745,6 @@ int main (int argc, char** argv)
 {
   ros::init(argc, argv, "StateEstimator");
   //ros::NodeHandle n;
-  autorally_core::StateEstimator wpt;
+  localization_core::StateEstimator wpt;
   ros::spin();
 }

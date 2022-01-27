@@ -36,7 +36,7 @@
       <!-- To use in sumulation set "rosparam set /gps_imu/FixedInitialPose true" -->
       <!-- and <param name="InvertY" value="false"/> -->
       <!-- and <param name="InvertZ" value="false"/> -->
-      <param name="FixedInitialPose" value="true"/>
+      <param name="FixedInitialPose" value="false"/>
       <param name="initialRoll" value="0"/>
       <param name="intialPitch" value="0"/>
       <param name="initialYaw" value="0"/>
@@ -59,7 +59,7 @@
       <param name="altOrigin" value="0.53667974472"/>
 
       <!-- flag for whether to use the wheel odometry messages -->
-      <param name="UseOdom" value="false"/>
+      <param name="UseOdom" value="true"/>
 
       <!-- if a GPS measurement is more than this threshold from the expected reading given
            the previous estimate, it will be disgarded (in meters) -->

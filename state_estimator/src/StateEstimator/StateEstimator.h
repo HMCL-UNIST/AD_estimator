@@ -24,12 +24,14 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 /**********************************************
- * @file StateEstimator.h
- * @author Brian Goldfain <bgoldfai@gmail.com>
- * @date May 1, 2017
+ * @file StateEstimator.cpp
+ * @author Paul Drews <pdrews3@gatech.edu>
+ * @author Edited by Hojin Lee <hojinlee@unist.ac.kr> 
+ * @date May 1, 2017 / modified 2022
  * @copyright 2017 Georgia Institute of Technology
- * @brief StateEstimator class definition
- *
+ * @brief ROS node to fuse information sources and create an accurate state estimation *
+ * @details Subscribes to other pose estimate solution, GPS, IMU, and wheel odometry topics, claculates
+ * an estimate of the car's current state using GTSAM, and publishes that data.
  ***********************************************/
 
 #ifndef StateEstimator_H_
@@ -67,6 +69,7 @@
 #include <autorally_msgs/stateEstimatorStatus.h>
 #include <imu_3dm_gx4/FilterOutput.h>
 #include <nav_msgs/Odometry.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <visualization_msgs/MarkerArray.h>
@@ -74,14 +77,14 @@
 #define PI 3.14159265358979323846264338
 
 
-namespace autorally_core
+namespace localization_core
 {
   class StateEstimator : public Diagnostics
   {
   private:
     ros::NodeHandle nh_;
     ros::Subscriber gpsSub_, imuSub_, odomSub_;
-    ros::Publisher  posePub_;
+    ros::Publisher  posePub_, estPosePub;
     ros::Publisher  biasAccPub_, biasGyroPub_;
     ros::Publisher  timePub_;
     ros::Publisher statusPub_;
@@ -107,6 +110,8 @@ namespace autorally_core
     boost::shared_ptr<gtsam::PreintegrationParams> preintegrationParams_;
 
     std::list<sensor_msgs::ImuConstPtr> imuMeasurements_, imuGrav_;
+    
+    geometry_msgs::PoseStampedConstPtr ip;
     imu_3dm_gx4::FilterOutput initialPose_;
     gtsam::Pose3 bodyPSensor_, carENUPcarNED_;
     gtsam::Pose3 imuPgps_;
