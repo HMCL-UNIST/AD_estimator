@@ -3,8 +3,8 @@
 <launch>
   <node name="local_to_world" pkg="local_to_world" type="local_to_world" output="screen">      
         <!-- <remap from="AA" to="BB"/> -->
-      <remap from="gps" to="/carla/ego_vehicle/gnss/gnss1/fix"/>
-      <remap from="pose" to="/current_pose"/>
+      <remap from="/local_to_world/gps" to="/carla/ego_vehicle/gnss/gnss1/fix"/>
+      <remap from="/local_to_world/pose" to="/current_pose"/>
   <!-- in metre -->
       <param name="l_to_g_sensor_x" value="0.0"/>
       <param name="l_to_g_sensor_y" value="0.0"/>

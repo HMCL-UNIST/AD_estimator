@@ -87,13 +87,15 @@ void Localtoworld::load_tf_file(std::string file){
 }
 
 void Localtoworld::GpsCallback(sensor_msgs::NavSatFixConstPtr fix)
-{
+{  
   if (!gpsPoseQ_.pushNonBlocking(fix))
     ROS_WARN("Dropping a GPS measurement due to full queue!!");
+  
+  
 }
 
 void Localtoworld::LocalCallback(geometry_msgs::PoseStampedConstPtr local_pose)
-{
+{  
   if (!localPoseQ_.pushNonBlocking(local_pose))
     ROS_WARN("Dropping a localPose measurement due to full queue!!");
 }
