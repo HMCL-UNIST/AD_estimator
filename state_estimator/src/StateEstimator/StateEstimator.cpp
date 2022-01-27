@@ -465,7 +465,7 @@ namespace localization_core
             {
               geometry_msgs::PoseWithCovarianceStamped point;
               point.header.stamp = ros::Time::now();
-              point.header.frame_id = "odom";
+              point.header.frame_id = "map";
               point.pose.pose.position.x = E;
               point.pose.pose.position.y = N;
               point.pose.covariance[0] = fix->position_covariance[0];
@@ -664,7 +664,7 @@ namespace localization_core
     poseNew.twist.twist.angular.z = gyro.z() + optimizedBias.gyroscope().z();
 
     poseNew.child_frame_id = "base_link";
-    poseNew.header.frame_id = "odom";
+    poseNew.header.frame_id = "map";
 
     posePub_.publish(poseNew);
     

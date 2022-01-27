@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+
+<launch>
+  <node name="local_to_world" pkg="local_to_world" type="local_to_world" output="screen">      
+        <!-- <remap from="AA" to="BB"/> -->
+      <remap from="gps" to="/carla/ego_vehicle/gnss/gnss1/fix"/>
+      <remap from="pose" to="/current_pose"/>
+  <!-- in metre -->
+      <param name="l_to_g_sensor_x" value="0.0"/>
+      <param name="l_to_g_sensor_y" value="0.0"/>
+      <param name="l_to_g_sensor_z" value="0.0"/>
+  <!-- in radian -->
+      <param name="l_to_g_sensor_roll" value="0.0"/>
+      <param name="l_to_g_sensor_pich" value="0.0"/>
+      <param name="l_to_g_sensor_yaw" value="0.0"/>
+      
+      <param name="record_transform" value="true"/>      
+      <param name="file_name" value="carla_test_v1"/>
+    
+  </node>
+</launch>
