@@ -40,6 +40,8 @@ Localtoworld::Localtoworld() :
   nh_("~"),
   sample_count(0),
   tf_available(false),
+  gotFirstFix_(false),
+  gotFirstLocal_(false),
   maxQSize_(0),
   gpsPoseQ_(40),
   localPoseQ_(40)   
@@ -47,18 +49,14 @@ Localtoworld::Localtoworld() :
   // temporary variables to retrieve parameters
   double l_to_g_sensor_x, l_to_g_sensor_y, l_to_g_sensor_z, l_to_g_sensor_roll, l_to_g_sensor_pich, l_to_g_sensor_yaw;
   std::string local_sensor_frame, global_sensor_frame;
-
-  nh_.param<double>("l_to_g_sensor_x", l_to_g_sensor_x, 0.0);
-  nh_.param<double>("l_to_g_sensor_y", l_to_g_sensor_y, 0.0);
-  nh_.param<double>("l_to_g_sensor_z", l_to_g_sensor_z, 0.0);
-  
-  nh_.param<double>("l_to_g_sensor_roll", l_to_g_sensor_roll, 0.0);
-  nh_.param<double>("l_to_g_sensor_pich", l_to_g_sensor_pich, 0.0);
-  nh_.param<double>("l_to_g_sensor_yaw", l_to_g_sensor_yaw, 0.0);
-
+ 
   nh_.param<double>("latOrigin", latOrigin, 0.0);
   nh_.param<double>("lonOrigin", lonOrigin, 0.0);
   nh_.param<double>("altOrigin", altOrigin, 0.0);
+
+  nh_.param<double>("gnss_skip_distance", gnss_skip_distance, 0.5);
+
+  nh_.param<int>("num_of_gpsPose_for_icp", num_of_gpsPose_for_icp, 10);
 
   nh_.param<bool>("record_transform", record_transform, false);
 
@@ -67,13 +65,30 @@ Localtoworld::Localtoworld() :
 
   nh_.param<std::string>("local_sensor_frame", local_sensor_frame, "lidar");
   nh_.param<std::string>("global_sensor_frame", global_sensor_frame, "gnss");
+ 
+
+  
   // Set frame between sensors
   
   try
   {
     ros::Time now = ros::Time(0);
-    local_transform_listener.waitForTransform(local_sensor_frame, global_sensor_frame, now, ros::Duration(2.0));
-    local_transform_listener.lookupTransform(local_sensor_frame, global_sensor_frame,  ros::Time(0), l_sensor_to_g_sensor);
+    local_transform_listener.waitForTransform(global_sensor_frame, local_sensor_frame, now, ros::Duration(2.0));
+    local_transform_listener.lookupTransform(global_sensor_frame, local_sensor_frame,  ros::Time(0), l_sensor_to_g_sensor);
+    l_to_g_sensor_x = l_sensor_to_g_sensor.getOrigin().x();
+    l_to_g_sensor_y = l_sensor_to_g_sensor.getOrigin().y();
+    l_to_g_sensor_z = l_sensor_to_g_sensor.getOrigin().z();
+    tf::Quaternion q(l_sensor_to_g_sensor.getRotation().x(), l_sensor_to_g_sensor.getRotation().y(),
+                        l_sensor_to_g_sensor.getRotation().z(), l_sensor_to_g_sensor.getRotation().w());        
+    tf::Matrix3x3 m(q);
+    m.getRPY(l_to_g_sensor_roll, l_to_g_sensor_pich, l_to_g_sensor_yaw);
+    // set transform between local and global sensors
+    Eigen::Translation3f tl_local_to_global(l_to_g_sensor_x, l_to_g_sensor_y, l_to_g_sensor_z);  // tl: translation
+    Eigen::AngleAxisf rot_x_local_to_global(l_to_g_sensor_roll, Eigen::Vector3f::UnitX());                   // rot: rotation
+    Eigen::AngleAxisf rot_y_local_to_global(l_to_g_sensor_pich, Eigen::Vector3f::UnitY());
+    Eigen::AngleAxisf rot_z_local_to_global(l_to_g_sensor_yaw, Eigen::Vector3f::UnitZ());  
+    l_to_g_sensor = (tl_local_to_global * rot_z_local_to_global * rot_y_local_to_global * rot_x_local_to_global).matrix();
+    g_to_l_sensor = l_to_g_sensor.inverse();
   }
   catch (tf::TransformException& ex)
   {    
@@ -82,13 +97,7 @@ Localtoworld::Localtoworld() :
     return;
   }
 
-  // set transform between local and global sensors
-  Eigen::Translation3f tl_local_to_global(l_to_g_sensor_x, l_to_g_sensor_y, l_to_g_sensor_z);  // tl: translation
-  Eigen::AngleAxisf rot_x_local_to_global(l_to_g_sensor_roll, Eigen::Vector3f::UnitX());                   // rot: rotation
-  Eigen::AngleAxisf rot_y_local_to_global(l_to_g_sensor_pich, Eigen::Vector3f::UnitY());
-  Eigen::AngleAxisf rot_z_local_to_global(l_to_g_sensor_yaw, Eigen::Vector3f::UnitZ());  
-  l_to_g_sensor = (tl_local_to_global * rot_z_local_to_global * rot_y_local_to_global * rot_x_local_to_global).matrix();
-  g_to_l_sensor = l_to_g_sensor.inverse();
+  
   
   // if not recording, load recorded tf data 
   if(!record_transform && boost::filesystem::exists(file_name)){    
@@ -138,35 +147,132 @@ Localtoworld::Localtoworld() :
 Localtoworld::~Localtoworld()
 {}
 
+
 void Localtoworld::GpsCallback(sensor_msgs::NavSatFixConstPtr fix)
-{  
-  if (!gpsPoseQ_.pushNonBlocking(fix)){
+{ 
+  if(!gotFirstFix_){
+    gpsPoseQ_.pushNonBlocking(fix);
+    gotFirstFix_ = true;    
+    return;
+  }  
+  double E,N,U;  
+  enu_.Forward(fix->latitude, fix->longitude, fix->altitude, E, N, U);
+  
+  double prev_E,prev_N,prev_U;
+  prev_gpsPoseFix = gpsPoseQ_.back();
+  enu_.Forward(prev_gpsPoseFix->latitude, prev_gpsPoseFix->longitude, prev_gpsPoseFix->altitude, prev_E, prev_N, prev_U);
+  
+  double dist = std::sqrt( std::pow(E - prev_E, 2) + std::pow(N - prev_N, 2) );
+  // push gnssFix data, if distance to previous reaches certain value 
+  if(dist > gnss_skip_distance){
+    if (!gpsPoseQ_.pushNonBlocking(fix)){
     ROS_WARN("Poping a GPS measurement due to full queue!!");    
     gpsPoseQ_.popBlocking();    
-  }
-    
-  
+    }  
+  } 
   
 }
 
+
+
 void Localtoworld::LocalCallback(geometry_msgs::PoseStampedConstPtr local_pose)
-{  
-  if (!localPoseQ_.pushNonBlocking(local_pose)){
-    ROS_WARN("Poping a localPose measurement due to full queue!!");
-    localPoseQ_.popBlocking();
+{ 
+   if(!gotFirstLocal_){
+    localPoseQ_.pushNonBlocking(local_pose);
+    gotFirstLocal_ = true;    
+    return;
+  }  
+  prev_localPose = localPoseQ_.back();
+  double dist = std::sqrt( std::pow(prev_localPose->pose.position.x -local_pose->pose.position.x, 2) + std::pow(prev_localPose->pose.position.y -local_pose->pose.position.y, 2) );
+  if( dist > gnss_skip_distance){
+    if (!localPoseQ_.pushNonBlocking(local_pose)){
+      ROS_WARN("Poping a localPose measurement due to full queue!!");
+      localPoseQ_.popBlocking();
+      }
     }
 }
 
 void Localtoworld::compute_transform()
 {
   ros::Rate loop_rate(10); // rate of GPS   
+  bool icp_converged  = false;
   while (ros::ok())
-  {
-    ROS_WARN("compute tranform");
-   sample_count +=1;
-   if(sample_count > 3)
-   break;
-  loop_rate.sleep();
+  {    
+    ROS_INFO("gpsPoseQ_size = %d", gpsPoseQ_.size());      
+    
+    if( gpsPoseQ_.size() > num_of_gpsPose_for_icp){
+      pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in_global (new pcl::PointCloud<pcl::PointXYZ>(gpsPoseQ_.size()-1,1));
+      pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_out_local (new pcl::PointCloud<pcl::PointXYZ>(localPoseQ_.size()-1,1));
+
+      // Fill in the CloudIn data
+      for (auto& point_in : *cloud_in_global)
+      {
+        gpsPoseFix = gpsPoseQ_.popBlocking();
+        double E,N,U;
+        enu_.Forward(gpsPoseFix->latitude, gpsPoseFix->longitude, gpsPoseFix->altitude, E, N, U);
+    
+        point_in.x = E;
+        point_in.y = N;
+        point_in.z = U;
+        // std::cout << "point_in.x = " <<  point_in.x << "  point_in.y = " <<  point_in.y<< "  point_in.z = " <<  point_in.z << std::endl;
+      }
+      // Fill in the CloutOut data
+      for (auto& point_out : *cloud_out_local)
+      { 
+        localPose = localPoseQ_.popBlocking();
+        double x,y,z; 
+        x = localPose->pose.position.x;
+        y = localPose->pose.position.y;
+        z = localPose->pose.position.z;        
+        tf::Quaternion q(localPose->pose.orientation.x, localPose->pose.orientation.y,
+                        localPose->pose.orientation.z , localPose->pose.orientation.w);        
+        tf::Matrix3x3 m(q);
+        double roll_tmp,pitch_tmp,yaw_tmp;
+        m.getRPY(roll_tmp, pitch_tmp, yaw_tmp);        
+        Eigen::Translation3f trans_tmp(x, y, z);  
+        Eigen::AngleAxisf rot_x_(roll_tmp, Eigen::Vector3f::UnitX());               
+        Eigen::AngleAxisf rot_y_(pitch_tmp, Eigen::Vector3f::UnitY());
+        Eigen::AngleAxisf rot_z_(yaw_tmp, Eigen::Vector3f::UnitZ());  
+        Eigen::Matrix4f local_pose_ = (trans_tmp * rot_z_ * rot_y_ * rot_x_).matrix();
+        // compute global sensor pose in local frame 
+        Eigen::Matrix4f global_sensor_in_local_frame = l_to_g_sensor*local_pose_;                                        
+        point_out.x = global_sensor_in_local_frame(0, 3);
+        point_out.y = global_sensor_in_local_frame(1, 3);
+        point_out.z = global_sensor_in_local_frame(2, 3);
+        // std::cout << "point_out.x = " <<  point_out.x << "  point_out.y = " <<  point_out.y<< "  point_out.z = " <<  point_out.z << std::endl;        
+      }
+      
+      pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+      icp.setInputSource(cloud_in_global);
+      icp.setInputTarget(cloud_out_local);  
+      pcl::PointCloud<pcl::PointXYZ> Final;
+      icp.align(Final);  
+      icp_converged = icp.hasConverged();
+      std::cout << "has converged:" << icp.hasConverged() << " score: " << icp.getFitnessScore() << std::endl;
+      std::cout << icp.getFinalTransformation() << std::endl;
+      g_to_l = icp.getFinalTransformation();      
+      l_to_g = g_to_l.inverse();
+      std::cout << "l_to_g = " << l_to_g << std::endl;
+      ////////////////////////////////////////////////////////
+      /////////////////  Check the transformed points //////////////////
+      // pcl::PointCloud<pcl::PointXYZ>::Ptr local_in_global (new pcl::PointCloud<pcl::PointXYZ>(localPoseQ_.size()-1,1));
+      // pcl::transformPointCloud (*cloud_out_local, *local_in_global, l_to_g);
+      // for (auto& point_tmp : *local_in_global){
+      //   std::cout << "local in global, point_tmp.x = " <<  point_tmp.x << "  point_tmp.y = " <<  point_tmp.y<< "  point_tmp.z = " <<  point_tmp.z << std::endl;        
+      // }
+      // for (auto& point_tmp : *cloud_out_local){
+      //   std::cout << "local x = " <<  point_tmp.x << "  local y = " <<  point_tmp.y<< "  local z = " <<  point_tmp.z << std::endl;        
+      // }
+      // for (auto& point_tmp : *cloud_in_global){
+      //   std::cout << "global x = " <<  point_tmp.x << "  global y = " <<  point_tmp.y<< "  global z = " <<  point_tmp.z << std::endl;        
+      // }
+      //////////////////////////////////////////////////////////
+    }
+
+    if(icp_converged)
+      {break;}
+
+    loop_rate.sleep();
   }
   
   /////////////////////////////////////////////
@@ -190,10 +296,9 @@ void Localtoworld::compute_transform()
   }
   else
   {
-    // lat, lon, tf_x, tf_y, tf_z, tf_q_w, tf_q_x, tf_q_y, tf_q_z
-    ofs << 0 << "," << 1 << "," << 2<< "," << 3<< "," << 4<< "," << 5<< "," << 6 << "," << 7 << "," << 8 << "," << 9 << std::endl;
-    ofs << 1 << "," << 11 << "," << 2<< "," << 3<< "," << 4<< "," << 5<< "," << 6 << "," << 7 << "," << 8 << "," << 9 << std::endl;
-    ofs << 2 << "," << 12 << "," << 2<< "," << 3<< "," << 4<< "," << 5<< "," << 6 << "," << 7 << "," << 8 << "," << 9 << std::endl;    
+    // lat, lon, tf_x, tf_y, tf_z, tf_q_w, tf_q_x, tf_q_y, tf_q_z    
+    Eigen::Quaternionf l_to_g_quat(l_to_g.topLeftCorner<3, 3>());
+    ofs << latOrigin << "," << lonOrigin << "," <<  l_to_g(0,3) << "," << l_to_g(1,3)<< "," << l_to_g(2,3)<< "," << l_to_g_quat.w() << "," << l_to_g_quat.x() << "," << l_to_g_quat.y() << "," << l_to_g_quat.z() << std::endl;        
     ofs.close();
     ROS_INFO("File is now saved ");
   }

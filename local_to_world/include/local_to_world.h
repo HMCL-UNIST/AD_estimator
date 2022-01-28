@@ -69,25 +69,32 @@ ros::Subscriber worldGpsSub, localPoseSub;
 ros::Publisher  worldPosePub, localGpsPub;
 
 BlockingQueue<sensor_msgs::NavSatFixConstPtr> gpsPoseQ_;
+BlockingQueue<sensor_msgs::NavSatFixConstPtr> gpsPoseQ_tmp;
 BlockingQueue<geometry_msgs::PoseStampedConstPtr> localPoseQ_;
+BlockingQueue<geometry_msgs::PoseStampedConstPtr> localPoseQ_tmp;
 
 // boost::mutex optimizedStateMutex_;
+sensor_msgs::NavSatFixConstPtr gpsPoseFix;
+sensor_msgs::NavSatFixConstPtr prev_gpsPoseFix;
 
 geometry_msgs::PoseStampedConstPtr gpsPose, localPose;
+geometry_msgs::PoseStampedConstPtr prev_localPose;
 
 bool fixedOrigin_;
 GeographicLib::LocalCartesian enu_;   /// Object to put lat/lon coordinates into local cartesian
-bool gotFirstFix_;
+bool gotFirstFix_, gotFirstLocal_;
 bool record_transform;
 double maxGPS_dist_Error_;
+double gnss_skip_distance;
 int maxQSize_;
 std::ofstream ofs;
  
 
 
 std::string file_name;
-int sample_count;
+int sample_count, num_of_gpsPose_for_icp;
 bool tf_available;
+
 double latOrigin, lonOrigin, altOrigin;
 std::vector<std::vector<std::string>> tf_data;
 

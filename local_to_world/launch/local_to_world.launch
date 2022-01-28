@@ -10,21 +10,17 @@
       <remap from="/local_to_world/gps" to="/carla/ego_vehicle/gnss/gnss1/fix"/>
       <remap from="/local_to_world/pose" to="/current_pose"/>
 
-    
+<!-- to run icp, let's put some value greater than 5~ -->
+      <param name="num_of_gpsPose_for_icp" value="20"/>
+      
+  <!-- in metre -->
+      <param name="gnss_skip_distance" value="3"/> 
+
       <param name="latOrigin" value="0.0"/>
       <param name="lonOrigin" value="0.0"/>
       <param name="altOrigin" value="0.0"/>
       
-  <!-- in metre -->
-      <param name="l_to_g_sensor_x" value="0.0"/>
-      <param name="l_to_g_sensor_y" value="0.0"/>
-      <param name="l_to_g_sensor_z" value="0.0"/>
-  <!-- in radian -->
-      <param name="l_to_g_sensor_roll" value="0.0"/>
-      <param name="l_to_g_sensor_pich" value="0.0"/>
-      <param name="l_to_g_sensor_yaw" value="0.0"/>
-      
-      <param name="record_transform" value="false"/>      
+      <param name="record_transform" value="true"/>      
       <param name="file_name" value="/home/hojin/ADplatform/state_est/src/AD_estimator/local_to_world/cfg/carla_test_v1.csv"/>
       
       <param name="local_sensor_frame" value="lidar"/>
