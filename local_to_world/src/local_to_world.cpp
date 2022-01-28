@@ -127,6 +127,32 @@ Localtoworld::Localtoworld() :
       latOrigin = std::stod(tf_data[0][0]);  lonOrigin = std::stod(tf_data[0][1]); altOrigin = std::stod(tf_data[0][2]);
       ROS_INFO("GNSS Origin set as, lat: %f, lon: %f, alt: %f",latOrigin,lonOrigin,altOrigin);      
       enu_.Reset(latOrigin,lonOrigin,altOrigin);
+      
+      if(tf_data.size() > 2){
+        ROS_INFO("Multiple reference tf matrix");        
+        // TO DO --> need to consider multi transform if the covered area is large
+      }
+
+      if(tf_data.size() > 1 && tf_data[1].size() > 7){
+
+          tf::Quaternion q(std::stof(tf_data[1][6]), std::stof(tf_data[1][7]),
+                          std::stof(tf_data[1][8]) , std::stof(tf_data[1][5]));        
+          tf::Matrix3x3 m(q);
+          double roll_tmp_,pitch_tmp_,yaw_tmp_;
+          m.getRPY(roll_tmp_, pitch_tmp_, yaw_tmp_);        
+          Eigen::Translation3f transtmp(std::stof(tf_data[1][2]), std::stof(tf_data[1][3]), std::stof(tf_data[1][4]));  
+          Eigen::AngleAxisf rt_x_(roll_tmp_, Eigen::Vector3f::UnitX());               
+          Eigen::AngleAxisf rt_y_(pitch_tmp_, Eigen::Vector3f::UnitY());
+          Eigen::AngleAxisf rt_z_(yaw_tmp_, Eigen::Vector3f::UnitZ());  
+          l_to_g = (transtmp * rt_z_ * rt_y_ * rt_x_).matrix();
+          g_to_l = l_to_g.inverse();          
+          std::cout << "l_to_g = " <<  l_to_g << std::endl;
+      }
+      else{
+        ROS_WARN("invalid tf matrix in file");
+        return;
+      }
+
   }
   // otherwise, start recording tf 
   else{
@@ -136,7 +162,7 @@ Localtoworld::Localtoworld() :
   
 
   worldPosePub = nh_.advertise<geometry_msgs::PoseStamped>("gps_pose_local", 1);
-  localGpsPub = nh_.advertise<geometry_msgs::PoseStamped>("local_pose_world", 1);  
+  localGpsPub = nh_.advertise<geometry_msgs::PoseStamped>("local_pose_in_global", 1);  
 
   worldGpsSub = nh_.subscribe("gps", 100, &Localtoworld::GpsCallback, this);
   localPoseSub = nh_.subscribe("pose", 100, &Localtoworld::LocalCallback, this);  
@@ -177,6 +203,33 @@ void Localtoworld::GpsCallback(sensor_msgs::NavSatFixConstPtr fix)
 
 void Localtoworld::LocalCallback(geometry_msgs::PoseStampedConstPtr local_pose)
 { 
+  if(!record_transform){
+    // l_to_g
+        tf::Quaternion qq(local_pose->pose.orientation.x, local_pose->pose.orientation.y,
+                        local_pose->pose.orientation.z , local_pose->pose.orientation.w);        
+        tf::Matrix3x3 mm(qq);
+        double rll_tmp,ptch_tmp,yw_tmp;
+        mm.getRPY(rll_tmp, ptch_tmp, yw_tmp);        
+        Eigen::Translation3f trns(local_pose->pose.position.x, local_pose->pose.position.y, local_pose->pose.position.z);  
+        Eigen::AngleAxisf rt_x_(rll_tmp, Eigen::Vector3f::UnitX());               
+        Eigen::AngleAxisf rt_y_(ptch_tmp, Eigen::Vector3f::UnitY());
+        Eigen::AngleAxisf rt_z_(yw_tmp, Eigen::Vector3f::UnitZ());  
+        Eigen::Matrix4f lpose = (trns * rt_z_ * rt_y_ * rt_x_).matrix();
+        // compute global sensor pose in local frame 
+        Eigen::Matrix4f local_pose_in_global_frame_ = l_to_g*lpose;        
+    Eigen::Quaternionf local_pose_in_global_frame_quat(local_pose_in_global_frame_.topLeftCorner<3, 3>());
+    geometry_msgs::PoseStamped transformed_msg; 
+    transformed_msg.header = local_pose->header;
+    transformed_msg.pose.position.x = local_pose_in_global_frame_(0,3);
+    transformed_msg.pose.position.y = local_pose_in_global_frame_(1,3);
+    transformed_msg.pose.position.z = local_pose_in_global_frame_(2,3);
+    transformed_msg.pose.orientation.x= local_pose_in_global_frame_quat.x();
+    transformed_msg.pose.orientation.y= local_pose_in_global_frame_quat.y();
+    transformed_msg.pose.orientation.z= local_pose_in_global_frame_quat.z();
+    transformed_msg.pose.orientation.w= local_pose_in_global_frame_quat.w();
+    localGpsPub.publish(transformed_msg);      
+  }
+
    if(!gotFirstLocal_){
     localPoseQ_.pushNonBlocking(local_pose);
     gotFirstLocal_ = true;    
@@ -298,6 +351,7 @@ void Localtoworld::compute_transform()
   {
     // lat, lon, tf_x, tf_y, tf_z, tf_q_w, tf_q_x, tf_q_y, tf_q_z    
     Eigen::Quaternionf l_to_g_quat(l_to_g.topLeftCorner<3, 3>());
+    ofs << latOrigin << "," << lonOrigin << "," << altOrigin << std::endl;
     ofs << latOrigin << "," << lonOrigin << "," <<  l_to_g(0,3) << "," << l_to_g(1,3)<< "," << l_to_g(2,3)<< "," << l_to_g_quat.w() << "," << l_to_g_quat.x() << "," << l_to_g_quat.y() << "," << l_to_g_quat.z() << std::endl;        
     ofs.close();
     ROS_INFO("File is now saved ");
