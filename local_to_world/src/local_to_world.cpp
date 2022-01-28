@@ -31,6 +31,7 @@
 #include "local_to_world.h"
 
 
+
 // macro for getting the time stamp of a ros message
 #define TIME(msg) ( (msg)->header.stamp.toSec() )
 
@@ -45,6 +46,7 @@ Localtoworld::Localtoworld() :
 {
   // temporary variables to retrieve parameters
   double l_to_g_sensor_x, l_to_g_sensor_y, l_to_g_sensor_z, l_to_g_sensor_roll, l_to_g_sensor_pich, l_to_g_sensor_yaw;
+  std::string local_sensor_frame, global_sensor_frame;
 
   nh_.param<double>("l_to_g_sensor_x", l_to_g_sensor_x, 0.0);
   nh_.param<double>("l_to_g_sensor_y", l_to_g_sensor_y, 0.0);
@@ -62,6 +64,23 @@ Localtoworld::Localtoworld() :
 
   
   nh_.param<std::string>("file_name", file_name, "carla_test_v1.csv");
+
+  nh_.param<std::string>("local_sensor_frame", local_sensor_frame, "lidar");
+  nh_.param<std::string>("global_sensor_frame", global_sensor_frame, "gnss");
+  // Set frame between sensors
+  
+  try
+  {
+    ros::Time now = ros::Time(0);
+    local_transform_listener.waitForTransform(local_sensor_frame, global_sensor_frame, now, ros::Duration(2.0));
+    local_transform_listener.lookupTransform(local_sensor_frame, global_sensor_frame,  ros::Time(0), l_sensor_to_g_sensor);
+  }
+  catch (tf::TransformException& ex)
+  {    
+    ROS_ERROR("%s", ex.what());
+    ROS_ERROR("sensor frame is not available.. exit node");
+    return;
+  }
 
   // set transform between local and global sensors
   Eigen::Translation3f tl_local_to_global(l_to_g_sensor_x, l_to_g_sensor_y, l_to_g_sensor_z);  // tl: translation

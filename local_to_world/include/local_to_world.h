@@ -42,6 +42,21 @@
 #include "BlockingQueue.h"
 #include <eigen3/Eigen/Geometry>
 
+#include <tf/tf.h>
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_datatypes.h>
+#include <tf/transform_listener.h>
+
+#include <pcl/io/io.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
+#include <pcl/registration/icp.h>
+
+#include <pcl_ros/point_cloud.h>
+#include <pcl_ros/transforms.h>
+#include <pcl_conversions/pcl_conversions.h>
+
+
 #define PI 3.14159265358979323846264338
 
 
@@ -68,6 +83,8 @@ double maxGPS_dist_Error_;
 int maxQSize_;
 std::ofstream ofs;
  
+
+
 std::string file_name;
 int sample_count;
 bool tf_available;
@@ -76,6 +93,10 @@ std::vector<std::vector<std::string>> tf_data;
 
 Eigen::Matrix4f l_to_g, g_to_l;
 Eigen::Matrix4f l_to_g_sensor, g_to_l_sensor;
+
+// transform from local sensor frame to global sensor frame
+tf::StampedTransform l_sensor_to_g_sensor;
+tf::TransformListener local_transform_listener;
 
 public:
 Localtoworld();
