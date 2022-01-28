@@ -11,7 +11,7 @@
       <remap from="/local_to_world/pose" to="/current_pose"/>
 
 <!-- to run icp, let's put some value greater than 5~ -->
-      <param name="num_of_gpsPose_for_icp" value="20"/>
+      <param name="num_of_gpsPose_for_icp" value="10"/>
       
   <!-- in metre -->
       <param name="gnss_skip_distance" value="3"/> 
@@ -20,8 +20,8 @@
       <param name="lonOrigin" value="0.0"/>
       <param name="altOrigin" value="0.0"/>
       
-      <param name="record_transform" value="true"/>      
-      <param name="file_name" value="/home/hojin/ADplatform/state_est/src/AD_estimator/local_to_world/cfg/carla_test_v1.csv"/>
+      <param name="record_transform" value="false"/>      
+      <param name="file_name" value="/home/hojin/ADplatform/state_est/src/AD_estimator/local_to_world/cfg/carla_test_v3.csv"/>
       
       <param name="local_sensor_frame" value="lidar"/>
       <param name="global_sensor_frame" value="ins"/>

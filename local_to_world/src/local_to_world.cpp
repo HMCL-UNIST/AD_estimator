@@ -53,6 +53,7 @@ Localtoworld::Localtoworld() :
   nh_.param<double>("latOrigin", latOrigin, 0.0);
   nh_.param<double>("lonOrigin", lonOrigin, 0.0);
   nh_.param<double>("altOrigin", altOrigin, 0.0);
+  enu_.Reset(latOrigin,lonOrigin,altOrigin);
 
   nh_.param<double>("gnss_skip_distance", gnss_skip_distance, 0.5);
 
@@ -183,6 +184,19 @@ void Localtoworld::GpsCallback(sensor_msgs::NavSatFixConstPtr fix)
   }  
   double E,N,U;  
   enu_.Forward(fix->latitude, fix->longitude, fix->altitude, E, N, U);
+
+  /////////////
+  geometry_msgs::PoseStamped globalPose_ENU;
+  globalPose_ENU.header = fix->header;
+  globalPose_ENU.pose.position.x = E;
+  globalPose_ENU.pose.position.y = N;
+  globalPose_ENU.pose.position.z = U;
+  globalPose_ENU.pose.orientation.x = 0;
+  globalPose_ENU.pose.orientation.y = 0;
+  globalPose_ENU.pose.orientation.z = 0;
+  globalPose_ENU.pose.orientation.w = 1;
+  worldPosePub.publish(globalPose_ENU);
+  ////////////
   
   double prev_E,prev_N,prev_U;
   prev_gpsPoseFix = gpsPoseQ_.back();
@@ -261,13 +275,13 @@ void Localtoworld::compute_transform()
       for (auto& point_in : *cloud_in_global)
       {
         gpsPoseFix = gpsPoseQ_.popBlocking();
-        double E,N,U;
-        enu_.Forward(gpsPoseFix->latitude, gpsPoseFix->longitude, gpsPoseFix->altitude, E, N, U);
+        double E_,N_,U_;
+        enu_.Forward(gpsPoseFix->latitude, gpsPoseFix->longitude, gpsPoseFix->altitude, E_, N_, U_);
     
-        point_in.x = E;
-        point_in.y = N;
-        point_in.z = U;
-        // std::cout << "point_in.x = " <<  point_in.x << "  point_in.y = " <<  point_in.y<< "  point_in.z = " <<  point_in.z << std::endl;
+        point_in.x = E_;
+        point_in.y = N_;
+        point_in.z = U_;
+        std::cout << "point_in.x = " <<  point_in.x << "  point_in.y = " <<  point_in.y<< "  point_in.z = " <<  point_in.z << std::endl;
       }
       // Fill in the CloutOut data
       for (auto& point_out : *cloud_out_local)
@@ -292,7 +306,7 @@ void Localtoworld::compute_transform()
         point_out.x = global_sensor_in_local_frame(0, 3);
         point_out.y = global_sensor_in_local_frame(1, 3);
         point_out.z = global_sensor_in_local_frame(2, 3);
-        // std::cout << "point_out.x = " <<  point_out.x << "  point_out.y = " <<  point_out.y<< "  point_out.z = " <<  point_out.z << std::endl;        
+        std::cout << "point_out.x = " <<  point_out.x << "  point_out.y = " <<  point_out.y<< "  point_out.z = " <<  point_out.z << std::endl;        
       }
       
       pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
