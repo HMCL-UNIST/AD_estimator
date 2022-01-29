@@ -21,7 +21,7 @@
       <param name="altOrigin" value="0.0"/>
       
       <param name="record_transform" value="false"/>      
-      <param name="file_name" value="/home/hojin/ADplatform/state_est/src/AD_estimator/local_to_world/cfg/carla_test_v3.csv"/>
+      <param name="file_name" value="/home/hojin/ADplatform/state_est/src/AD_estimator/local_to_world/cfg/carla_test_v1.csv"/>
       
       <param name="local_sensor_frame" value="lidar"/>
       <param name="global_sensor_frame" value="ins"/>

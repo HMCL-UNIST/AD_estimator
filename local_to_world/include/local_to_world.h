@@ -66,7 +66,7 @@ class Localtoworld
 private:
 ros::NodeHandle nh_;
 ros::Subscriber worldGpsSub, localPoseSub;
-ros::Publisher  worldPosePub, localGpsPub;
+ros::Publisher  worldPosePub, localGpsPub, localFixPub;
 
 BlockingQueue<sensor_msgs::NavSatFixConstPtr> gpsPoseQ_;
 BlockingQueue<sensor_msgs::NavSatFixConstPtr> gpsPoseQ_tmp;

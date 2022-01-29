@@ -83,7 +83,7 @@ namespace localization_core
   {
   private:
     ros::NodeHandle nh_;
-    ros::Subscriber gpsSub_, imuSub_, odomSub_;
+    ros::Subscriber gpsSub_, imuSub_, odomSub_, localPoseSub_;
     ros::Publisher  posePub_, estPosePub;
     ros::Publisher  biasAccPub_, biasGyroPub_;
     ros::Publisher  timePub_;
@@ -93,12 +93,13 @@ namespace localization_core
     double lastImuT_, lastImuTgps_;
     unsigned char status_;
     double accelBiasSigma_, gyroBiasSigma_;
-    double gpsSigma_;
+    double gpsSigma_, localPoseSigma_;
     int maxQSize_;
 
     BlockingQueue<sensor_msgs::NavSatFixConstPtr> gpsOptQ_;
     BlockingQueue<sensor_msgs::ImuConstPtr> imuOptQ_;
     BlockingQueue<nav_msgs::OdometryConstPtr> odomOptQ_;
+    BlockingQueue<geometry_msgs::PoseStampedConstPtr> localPoseOptQ_;
 
     boost::mutex optimizedStateMutex_;
     gtsam::NavState optimizedState_;
@@ -118,10 +119,10 @@ namespace localization_core
 
     bool fixedOrigin_;
     GeographicLib::LocalCartesian enu_;   /// Object to put lat/lon coordinates into local cartesian
-    bool gotFirstFix_;
+    bool gotFirstFix_, gotFirstLocalPose_;
     bool invertx_, inverty_, invertz_;
-    bool usingOdom_;
-    double maxGPSError_;
+    bool usingOdom_, usingLocalPose_;
+    double maxGPSError_, maxLocalPoseError_;
 
     gtsam::SharedDiagonal priorNoisePose_;
     gtsam::SharedDiagonal priorNoiseVel_;
@@ -130,6 +131,7 @@ namespace localization_core
     gtsam::ISAM2 *isam_;
 
     nav_msgs::OdometryConstPtr lastOdom_;
+    geometry_msgs::PoseStampedConstPtr lastLocalPose_;
 
   public:
     StateEstimator();
@@ -137,11 +139,13 @@ namespace localization_core
     void GpsCallback(sensor_msgs::NavSatFixConstPtr fix);
     void ImuCallback(sensor_msgs::ImuConstPtr imu);
     void WheelOdomCallback(nav_msgs::OdometryConstPtr odom);
+    void localPoseCallback(geometry_msgs::PoseStampedConstPtr pose);
     void GpsHelper();
     void GpsHelper_1();
     void diagnosticStatus(const ros::TimerEvent& time);
     gtsam::BetweenFactor<gtsam::Pose3> integrateWheelOdom(double prevTime, double stopTime, int curFactor);
     void GetAccGyro(sensor_msgs::ImuConstPtr imu, gtsam::Vector3 &acc, gtsam::Vector3 &gyro);
+    
   };
 };
 

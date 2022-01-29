@@ -3,8 +3,9 @@
 <launch>
 
   <node name="state_estimator" pkg="state_estimator" type="StateEstimator" output="screen">      
-      <remap from="state_estimator/gps" to="/carla/ego_vehicle/gnss/gnss1/fix"/>
+      <remap from="state_estimator/gps" to="/local_to_world/local_fix"/>
       <remap from="state_estimator/imu" to="/carla/ego_vehicle/imu/imu1"/>
+      <remap from="state_estimator/local_pose" to="/ndt_pose"/>
       <remap from="state_estimator/pose" to="pose_estimate"/>
       <remap from="state_estimator/filter" to="imu/filter"/>
       <remap from="state_estimator/bias_acc" to="bias_acc"/>
@@ -20,7 +21,8 @@
       <param name="GyroSigma" value="8.73e-5"/>
       <param name="AccelBiasSigma" value="3.9e-4"/>
       <param name="GyroBiasSigma" value="4.8e-05"/>
-      <param name="GPSSigma" value="0.5"/>
+      <param name="GPSSigma" value="1.0"/>
+      <param name="localPoseSigma" value="0.1"/>      
       <!--<param name="SensorTransformX" value="0.076"/>
       <param name="SensorTransformY" value="-0.0246"/>
       <param name="SensorTransformZ" value="-0.020"/>-->
@@ -48,22 +50,26 @@
       <param name="GPSZ" value="0.0"/>
 
       <!-- set the lat/lon/alt origin for GPS UTM to local frame transform -->
-      <param name="FixedOrigin" value="false"/>
+      <param name="FixedOrigin" value="true"/>
       <!-- currently using approximate marietta location -->
       <!--<param name="latOrigin" value="33.7744980893"/>-->
       <!--<param name="lonOrigin" value="-84.4050941205"/>-->
       <!--<param name="altOrigin" value="277.752"/>-->
       <!-- currently using approximate ccrf location -->
-      <param name="latOrigin" value="-0.000618580252777"/>
-      <param name="lonOrigin" value="0.00352561800655"/>
-      <param name="altOrigin" value="0.53667974472"/>
+      <param name="latOrigin" value="0.0"/>
+      <param name="lonOrigin" value="0.0"/>
+      <param name="altOrigin" value="0.0"/>
 
       <!-- flag for whether to use the wheel odometry messages -->
       <param name="UseOdom" value="true"/>
 
+      <param name="UseLocalPose" value="true"/>
+
       <!-- if a GPS measurement is more than this threshold from the expected reading given
            the previous estimate, it will be disgarded (in meters) -->
-      <param name="MaxGPSError" value="10"/>
+      <param name="MaxGPSError" value="1"/>
+      <param name="maxLocalPoseError" value="2"/>
+      
 
   </node>
 </launch>

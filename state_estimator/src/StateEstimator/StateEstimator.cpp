@@ -80,9 +80,11 @@ namespace localization_core
     lastImuTgps_(0.0),
     maxQSize_(0),
     gpsOptQ_(40),
+    localPoseOptQ_(40),
     imuOptQ_(400),
     odomOptQ_(100),
-    gotFirstFix_(false)
+    gotFirstFix_(false),
+    gotFirstLocalPose_(false)
   {
     // temporary variables to retrieve parameters
     double accSigma, gyroSigma, initialVelNoise, initialBiasNoiseAcc, initialBiasNoiseGyro, initialRotationNoise,
@@ -98,6 +100,7 @@ namespace localization_core
     nh_.param<double>("AccelBiasSigma", accelBiasSigma_, 2.0e-4);
     nh_.param<double>("GyroBiasSigma", gyroBiasSigma_, 3.0e-5);
     nh_.param<double>("GPSSigma", gpsSigma_, 0.07);
+    nh_.param<double>("localPoseSigma", localPoseSigma_, 0.01);
     nh_.param<double>("SensorTransformX", sensorX, 0.0);
     nh_.param<double>("SensorTransformY", sensorY, 0.0);
     nh_.param<double>("SensorTransformZ", sensorZ, 0.0);
@@ -135,7 +138,9 @@ namespace localization_core
     nh_.param<double>("altOrigin", altOrigin, 0);
 
     nh_.param<bool>("UseOdom", usingOdom_, false);
+    nh_.param<bool>("UseLocalPose", usingLocalPose_, false);
     nh_.param<double>("MaxGPSError", maxGPSError_, 10.0);
+    nh_.param<double>("maxLocalPoseError", maxLocalPoseError_, 10.0);
 
     if (fixedOrigin_)
       enu_.Reset(latOrigin, lonOrigin, altOrigin);
@@ -255,12 +260,17 @@ namespace localization_core
      gpsSub_ = nh_.subscribe("gps", 300, &StateEstimator::GpsCallback, this);
      imuSub_ = nh_.subscribe("imu", 600, &StateEstimator::ImuCallback, this);
      odomSub_ = nh_.subscribe("wheel_odom", 300, &StateEstimator::WheelOdomCallback, this);
-
+     localPoseSub_ = nh_.subscribe("local_pose", 300, &StateEstimator::localPoseCallback, this);
      boost::thread optimizer(&StateEstimator::GpsHelper,this); // main loop
   }
 
   StateEstimator::~StateEstimator()
   {}
+  
+  void StateEstimator::localPoseCallback(geometry_msgs::PoseStampedConstPtr pose){
+    if (!localPoseOptQ_.pushNonBlocking(pose) && usingLocalPose_)
+      ROS_WARN("Dropping a LocalPose measurement due to full queue!!");
+  }
 
   void StateEstimator::GpsCallback(sensor_msgs::NavSatFixConstPtr fix)
   {
@@ -308,7 +318,8 @@ namespace localization_core
     while (ros::ok())
     {
       bool optimize = false;
-
+      
+      
       if (!gotFirstFix)
       {
         sensor_msgs::NavSatFixConstPtr fix = gpsOptQ_.popBlocking();
@@ -326,6 +337,10 @@ namespace localization_core
 
         if(usingOdom_) {
           lastOdom_ = odomOptQ_.popBlocking();
+        }
+
+        if(usingLocalPose_){
+           lastLocalPose_ = localPoseOptQ_.popBlocking();
         }
 
         NonlinearFactorGraph newFactors;
@@ -398,7 +413,7 @@ namespace localization_core
 
         // add IMU measurements
         while (imuOptQ_.size() > 0 && (TIME(imuOptQ_.back()) > (startTime + imuKey * 0.1)))
-        {
+        {          
           double curTime = startTime + imuKey * 0.1;
           PreintegratedImuMeasurements pre_int_data(preintegrationParams_, previousBias_);
           while(TIME(lastIMU_) < curTime)
@@ -428,14 +443,14 @@ namespace localization_core
           ++imuKey;
           optimize = true;
         }
-
+        
 
         // add GPS measurements that are not ahead of the imu messages
         while (optimize && gpsOptQ_.size() > 0 && TIME(gpsOptQ_.front()) < (startTime + (imuKey-1)*0.1 + 1e-2))
         {
           sensor_msgs::NavSatFixConstPtr fix = gpsOptQ_.popBlocking();
-          double timeDiff = (TIME(fix) - startTime) / 0.1;
-          int key = round(timeDiff);
+          double timeDiff = (TIME(fix) - startTime) / 0.1; // 
+          int key = round(timeDiff);           
           if (std::abs(timeDiff - key) < 1e-4)
           {
             // this is a gps message for a factor
@@ -451,15 +466,15 @@ namespace localization_core
             else
               expectedState = isam_->calculateEstimate<Pose3>(X(key));
 
-            ROS_WARN("x = %f,y = %f,z = %f,",expectedState.x(),expectedState.y(),expectedState.z());
-            ROS_WARN("E = %f,N = %f",E,N);
+            // ROS_WARN("x = %f,y = %f,z = %f,",expectedState.x(),expectedState.y(),expectedState.z());
+            // ROS_WARN("E = %f,N = %f",E,N);
             double dist = std::sqrt( std::pow(expectedState.x() - E, 2) + std::pow(expectedState.y() - N, 2) );
             
-            ROS_WARN("dist = %f", dist);
-            if (dist > maxGPSError_ )
-            {ROS_WARN("dist > maxGPSError");}
-            if (latestGPSKey > imuKey-2)
-            {ROS_WARN("latestGPSKey > imuKey-2");}
+            // ROS_WARN("dist = %f", dist);
+            // if (dist > maxGPSError_ )
+            // {ROS_WARN("dist > maxGPSError");}
+            // if (latestGPSKey > imuKey-2)
+            // {ROS_WARN("latestGPSKey > imuKey-2");}
 
             if (dist < maxGPSError_ || latestGPSKey < imuKey-2)
             {
@@ -490,8 +505,47 @@ namespace localization_core
           }
         }
 
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
+        // add LocalPose measurements that are not ahead of the imu messages         
+        while (optimize && localPoseOptQ_.size() > 0 && TIME(localPoseOptQ_.front()) < (startTime + (imuKey-1)*0.1 + 1e-2))
+        {
+          geometry_msgs::PoseStampedConstPtr local_pose_ = localPoseOptQ_.popBlocking();
+          double timeDiff_ = (TIME(local_pose_) - startTime) / 0.1; // 
+          int key_ = round(timeDiff_);                       
+          if (std::abs(timeDiff_ - key_) < 1e-1)
+          { 
+            gtsam::Pose3 local_pose3_ = Pose3(Rot3::Quaternion(local_pose_->pose.orientation.w, local_pose_->pose.orientation.x, local_pose_->pose.orientation.y, local_pose_->pose.orientation.z),Point3(local_pose_->pose.position.x, local_pose_->pose.position.y, local_pose_->pose.position.z));
 
+            // check if the LocalPoseMsg message is close to our expected position
+            Pose3 expectedState_;            
+            if (newVariables.exists(X(key_)))
+              expectedState_ = (Pose3) newVariables.at<Pose3>(X(key_));
+            else
+              expectedState_ = isam_->calculateEstimate<Pose3>(X(key_));            
+            double dist_ = std::sqrt( std::pow(expectedState_.x() - local_pose_->pose.position.x, 2) + std::pow(expectedState_.y() - local_pose_->pose.position.y, 2) );
+            
+            if (dist_ < maxLocalPoseError_ || key_ < imuKey-2)
+            {
+              SharedDiagonal LocalPoseNoise = noiseModel::Diagonal::Sigmas(
+          (Vector(6) << localPoseSigma_*0.1,localPoseSigma_*0.1,localPoseSigma_*0.1,localPoseSigma_,localPoseSigma_,localPoseSigma_).finished());
 
+              PriorFactor<Pose3> localPosePrior_(X(key_), local_pose3_, LocalPoseNoise);
+              newFactors.add(localPosePrior_);
+              // newFactors.emplace_shared<PriorFactor<Pose3>>(X(key_), local_pose3_, LocalPoseNoise);
+              // newVariables.insert(X(key_), local_pose3_);              
+            }
+            else
+            {
+              ROS_WARN("Received bad local Pose message");
+              diag_warn("Received bad local Pose message");
+            }
+          }
+        }
+
+///////////////////////////////////////////////////////
+///////////////////////////////////////////////////////
+        
         // if only using odom with no GPS, then remove old messages from queue
         while (!usingOdom_ && odomOptQ_.size() > 0 && TIME(odomOptQ_.front()) < (odomKey*0.1 + startTime))
           lastOdom_ = odomOptQ_.popBlocking();

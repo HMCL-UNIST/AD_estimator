@@ -163,6 +163,7 @@ Localtoworld::Localtoworld() :
   
 
   worldPosePub = nh_.advertise<geometry_msgs::PoseStamped>("gps_pose_local", 1);
+  localFixPub = nh_.advertise<sensor_msgs::NavSatFix>("local_fix", 1);
   localGpsPub = nh_.advertise<geometry_msgs::PoseStamped>("local_pose_in_global", 1);  
 
   worldGpsSub = nh_.subscribe("gps", 100, &Localtoworld::GpsCallback, this);
@@ -186,16 +187,38 @@ void Localtoworld::GpsCallback(sensor_msgs::NavSatFixConstPtr fix)
   enu_.Forward(fix->latitude, fix->longitude, fix->altitude, E, N, U);
 
   /////////////
+  // g_to_l              
+        Eigen::Translation3f trnss(E,N,U);  
+        Eigen::AngleAxisf rt_x_(0, Eigen::Vector3f::UnitX());               
+        Eigen::AngleAxisf rt_y_(0, Eigen::Vector3f::UnitY());
+        Eigen::AngleAxisf rt_z_(0, Eigen::Vector3f::UnitZ());  
+        Eigen::Matrix4f gpose = (trnss * rt_z_ * rt_y_ * rt_x_).matrix();
+        // compute global sensor pose in local frame 
+        Eigen::Matrix4f global_pose_in_local_frame_ = g_to_l*gpose;            
+     
   geometry_msgs::PoseStamped globalPose_ENU;
   globalPose_ENU.header = fix->header;
-  globalPose_ENU.pose.position.x = E;
-  globalPose_ENU.pose.position.y = N;
-  globalPose_ENU.pose.position.z = U;
+  globalPose_ENU.header.frame_id = "map";
+  globalPose_ENU.pose.position.x = global_pose_in_local_frame_(0,3);
+  globalPose_ENU.pose.position.y = global_pose_in_local_frame_(1,3);
+  globalPose_ENU.pose.position.z = global_pose_in_local_frame_(2,3);
   globalPose_ENU.pose.orientation.x = 0;
   globalPose_ENU.pose.orientation.y = 0;
   globalPose_ENU.pose.orientation.z = 0;
   globalPose_ENU.pose.orientation.w = 1;
-  worldPosePub.publish(globalPose_ENU);
+  worldPosePub.publish(globalPose_ENU);    
+  
+  sensor_msgs::NavSatFix local_fix_msg;
+  local_fix_msg.status = fix->status;
+  local_fix_msg.position_covariance= fix->position_covariance;
+  local_fix_msg.position_covariance_type = fix->position_covariance_type;
+  local_fix_msg.header = globalPose_ENU.header;
+  double local_lat, local_lon, local_alt;
+  enu_.Reverse(global_pose_in_local_frame_(0,3),global_pose_in_local_frame_(1,3),global_pose_in_local_frame_(2,3),local_lat,local_lon,local_alt);
+  local_fix_msg.latitude = local_lat;
+  local_fix_msg.longitude = local_lon;
+  local_fix_msg.altitude = local_alt;
+  localFixPub.publish(local_fix_msg);
   ////////////
   
   double prev_E,prev_N,prev_U;
