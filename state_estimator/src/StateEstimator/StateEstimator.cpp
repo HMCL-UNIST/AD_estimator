@@ -450,9 +450,12 @@ namespace localization_core
         {
           sensor_msgs::NavSatFixConstPtr fix = gpsOptQ_.popBlocking();
           double timeDiff = (TIME(fix) - startTime) / 0.1; // 
-          int key = round(timeDiff);           
-          if (std::abs(timeDiff - key) < 1e-4)
-          {
+          int key = round(timeDiff); 
+          ROS_WARN("timeDiff = %f", timeDiff);
+          ROS_WARN("key = %d", key);
+          if (std::abs(timeDiff - key) < 1e-1)
+          { 
+            ROS_WARN("gps updated");
             // this is a gps message for a factor
             latestGPSKey = key;
             double E,N,U;
@@ -524,11 +527,13 @@ namespace localization_core
             else
               expectedState_ = isam_->calculateEstimate<Pose3>(X(key_));            
             double dist_ = std::sqrt( std::pow(expectedState_.x() - local_pose_->pose.position.x, 2) + std::pow(expectedState_.y() - local_pose_->pose.position.y, 2) );
-            
+            ROS_WARN("local error dist = %f", dist_);
+            ROS_WARN("key_ = %d", key_);
+            ROS_WARN("imuKey = %d", imuKey);
             if (dist_ < maxLocalPoseError_ || key_ < imuKey-2)
             {
               SharedDiagonal LocalPoseNoise = noiseModel::Diagonal::Sigmas(
-          (Vector(6) << localPoseSigma_*0.1,localPoseSigma_*0.1,localPoseSigma_*0.1,localPoseSigma_,localPoseSigma_,localPoseSigma_).finished());
+                      (Vector(6) << localPoseSigma_*0.1,localPoseSigma_*0.1,localPoseSigma_*0.1,localPoseSigma_,localPoseSigma_,localPoseSigma_).finished());
 
               PriorFactor<Pose3> localPosePrior_(X(key_), local_pose3_, LocalPoseNoise);
               newFactors.add(localPosePrior_);
